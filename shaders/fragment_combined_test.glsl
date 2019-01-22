@@ -594,7 +594,7 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed ) // HACK dis
 	bool bounceIsSpecular = true;
 
 
-    for (int bounces = 0; bounces < 5; bounces++)
+    for (int bounces = 0; bounces < 6; bounces++)
 	{
 
 		float t = SceneIntersect(r, intersec, false); // HACK remove false (checkOcean)
@@ -1006,8 +1006,8 @@ void main( void )
 	}
 	else if ( uCameraIsMoving )
 	{
-		previousColor *= 0.5; // motion-blur trail amount (old image)
-		pixelColor *= 0.5; // brightness of new image (noisy)
+		previousColor *= 0.5; // motion-blur trail amount (old image) // UPDATE use 0.78 for better performance, use in different state?     else if ( uCameraIsMoving || rayHitIsDynamic )
+		pixelColor *= 0.5; // brightness of new image (noisy) // UPDATE use 0.22 for better performance, use in different state?     else if ( uCameraIsMoving || rayHitIsDynamic )
 	}
 	
 	

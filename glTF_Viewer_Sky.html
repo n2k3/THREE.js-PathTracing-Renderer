@@ -57,6 +57,7 @@
     var increaseFocusDist = false;
     var decreaseFocusDist = false;
     var pixelRatio = 1;
+    var windowIsBeingResized = false;
 	var TWO_PI = Math.PI * 2;
 	var sunAngle = 0;
 	var sunDirection = new THREE.Vector3();
@@ -778,7 +779,7 @@
 
 
     function onWindowResize(event) {
-        // TODO fix the incremental rendering result's brightness being lower then before resize
+
         SCREEN_WIDTH = window.innerWidth;
         SCREEN_HEIGHT = window.innerHeight;
 
@@ -805,6 +806,8 @@
         fovScale = worldCamera.fov * 0.5 * (Math.PI / 180.0);
         pathTracingUniforms.uVLen.value = Math.tan(fovScale);
         pathTracingUniforms.uULen.value = pathTracingUniforms.uVLen.value * worldCamera.aspect;
+
+        windowIsBeingResized = true;
 
         if (!mouseControl) {
 
@@ -865,6 +868,11 @@
 
         // reset flags
         cameraIsMoving = false;
+        if (windowIsBeingResized) {
+            cameraIsMoving = true;
+            windowIsBeingResized = false;
+        }
+
         cameraJustStartedMoving = false;
 
         // check user controls
