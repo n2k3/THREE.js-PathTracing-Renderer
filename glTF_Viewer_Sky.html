@@ -9,12 +9,14 @@
 </head>
 <body>
 
-<div id="container"></div>
-<div id="info">three.js PathTracing Renderer - glTF Viewer</div>
-<div id="cameraInfo">
-    FOV: 72 / Aperture: 0.00 / FocusDistance: 100 <br>
-    Samples: 0
+<div id="info" class="black-transparent-bg no-select"><span>three.js PathTracing Renderer - glTF Viewer</span></div>
+<div id="cameraInfo" class="black-transparent-bg no-select">
+    <span>FOV: 72<br>
+        Aperture: 0.00<br>
+        FocusDistance: 100<br>
+        Samples: 0</span>
 </div>
+<div id="container"></div>
 
 <script src="js/three.min.js"></script>
 <script src="js/BufferGeometryUtils.js"></script>
@@ -115,15 +117,7 @@
 
     var PI_2 = Math.PI / 2; //used by controls below
 
-    var infoElement = document.getElementById('info');
-    infoElement.style.cursor = "default";
-    infoElement.style.webkitUserSelect = "none";
-    infoElement.style.MozUserSelect = "none";
-
-    var cameraInfoElement = document.getElementById('cameraInfo');
-    cameraInfoElement.style.cursor = "default";
-    cameraInfoElement.style.webkitUserSelect = "none";
-    cameraInfoElement.style.MozUserSelect = "none";
+    var cameraInfoElement = document.querySelector("#cameraInfo span");
 
     var mouseControl = true;
 
@@ -147,13 +141,13 @@
     class MaterialObject {
         constructor(material) {
             // a list of material types and their corresponding numbers are found in the 'pathTracingCommon.js' file
-            this.type = material.opacity < 1 ? 2 : 4; // default is 1 = diffuse opaque, 2 = glossy transparent, 4 = glossy opaque;
+            this.type = material.opacity < 1 ? 2 : 1; // default is 1 = diffuse opaque, 2 = glossy transparent, 4 = glossy opaque;
             this.albedoTextureID = -1; // which diffuse map to use for model's color, '-1' = no textures are used
             this.color = material.color ? material.color.copy(material.color) : new THREE.Color(1.0, 1.0, 1.0); // takes on different meanings, depending on 'type' above
             this.roughness = material.roughness || 0.0; // 0.0 to 1.0 range, perfectly smooth to extremely rough
             this.metalness = material.metalness || 0.0; // 0.0 to 1.0 range, usually either 0 or 1, either non-metal or metal
             this.opacity = material.opacity || 1.0; // 0.0 to 1.0 range, fully transparent to fully opaque
-            this.refractiveIndex = this.type === 4 ? 1.4 : 1.5; // 1.0=air, 1.33=water, 1.4=clearCoat, 1.5=glass, etc.
+            this.refractiveIndex = this.type === 4 ? 1.0 : 1.5; // 1.0=air, 1.33=water, 1.4=clearCoat, 1.5=glass, etc.
             pathTracingMaterialList.push(this);
         }
     }
@@ -162,7 +156,7 @@
 
     var gltfLoader = new THREE.GLTFLoader();
 
-    gltfLoader.load("models/00_003_002.gltf", function( meshGroup ) {
+    gltfLoader.load("models/scene.gltf", function( meshGroup ) {
         if (meshGroup.scene)
             meshGroup = meshGroup.scene;
 
@@ -1120,7 +1114,7 @@
         pathTracingUniforms.uCameraMatrix.value.copy(worldCamera.matrixWorld);
         screenOutputMaterial.uniforms.uOneOverSampleCounter.value = 1.0 / sampleCounter;
 
-        cameraInfoElement.innerHTML = `FOV: ${worldCamera.fov} / Aperture: ${apertureSize.toFixed(2)} / FocusDistance: ${focusDistance}<br>Samples: ${sampleCounter}`;
+        cameraInfoElement.innerHTML = `FOV: ${worldCamera.fov}<br>Aperture: ${apertureSize.toFixed(2)}<br>FocusDistance: ${focusDistance}<br>Samples: ${sampleCounter}`;
 
         // RENDERING in 3 steps
 

@@ -13,7 +13,6 @@ uniform mat4 uTallBoxInvMatrix;
 uniform mat3 uTallBoxNormalMatrix;
 
 #include <pathtracing_uniforms_and_defines>
-
 #include <pathtracing_calc_fresnel_reflectance>
 
 uniform sampler2D t_PerlinNoise;
@@ -30,44 +29,25 @@ uniform sampler2D tAlbedoTextures[8]; // 8 = max number of diffuse albedo textur
 
 #define INV_TEXTURE_WIDTH 0.00048828125
 
-#define N_SPHERES 5
-#define N_BOXES 2
-#define N_OPENCYLINDERS 4
 #define N_QUADS 1
 
 //-----------------------------------------------------------------------
 
 struct Ray { vec3 origin; vec3 direction; };
-struct OpenCylinder { float radius; vec3 pos1; vec3 pos2; vec3 emission; vec3 color; int type; };
 struct Quad { vec3 v0; vec3 v1; vec3 v2; vec3 v3; vec3 emission; vec3 color; int type; };
 struct Sphere { float radius; vec3 position; vec3 emission; vec3 color; int type; };
 struct Box { vec3 minCorner; vec3 maxCorner; vec3 emission; vec3 color; int type; };
 struct Intersection { vec3 normal; vec3 emission; vec3 color; vec2 uv; int type; int albedoTextureID; }; // HACK remove albedoTextureID
 
-OpenCylinder openCylinders[N_OPENCYLINDERS];
 Quad quads[N_QUADS];
-Sphere spheres[N_SPHERES];
-Box boxes[N_BOXES];
-
 
 #include <pathtracing_random_functions>
-
-// #include <pathtracing_calc_fresnel_reflectance> // HACK enable this here, disable above
-
 #include <pathtracing_sphere_intersect>
-
-#include <pathtracing_opencylinder_intersect>
-
 #include <pathtracing_plane_intersect>
-
 #include <pathtracing_triangle_intersect>
-
 #include <pathtracing_box_intersect>
-
 #include <pathtracing_physical_sky_functions>
-
 #include <pathtracing_boundingbox_intersect>
-
 #include <pathtracing_bvhTriangle_intersect>
 
 //----------------------------------------------------------------------------
@@ -78,7 +58,6 @@ float QuadIntersect( vec3 v0, vec3 v1, vec3 v2, vec3 v3, Ray r )
 	float tTri2 = TriangleIntersect( v0, v2, v3, r );
 	return min(tTri1, tTri2);
 }
-
 
 //---------------------------------------------------------------------------------------------------------
 float DisplacementBoxIntersect( vec3 minCorner, vec3 maxCorner, Ray r )
@@ -378,7 +357,7 @@ float SceneIntersect( Ray r, inout Intersection intersec, bool checkOcean ) // H
 		intersec.color = vec3(0.0, 0.07, 0.07);
 		intersec.type = SEAFLOOR;
 	}
-	
+
 	for (int i = 0; i < N_QUADS; i++)
         {
 		d = QuadIntersect( quads[i].v0, quads[i].v1, quads[i].v2, quads[i].v3, r );
@@ -393,65 +372,13 @@ float SceneIntersect( Ray r, inout Intersection intersec, bool checkOcean ) // H
     }
 	
     // skip rendering the rest
-    return t; // HACK disable this
-	
-	for (int i = 0; i < N_OPENCYLINDERS; i++)
-        {
-		d = OpenCylinderIntersect( openCylinders[i].pos1, openCylinders[i].pos2, openCylinders[i].radius, r, normal );
-		if (d < t)
-		{
-			t = d;
-			intersec.normal = normalize(normal);
-			intersec.emission = openCylinders[i].emission;
-			intersec.color = openCylinders[i].color;
-			intersec.type = openCylinders[i].type;
-		}
-    }
-	
-	// TALL MIRROR BOX
-	// transform ray into Tall Box's object space
-	rObj.origin = vec3( uTallBoxInvMatrix * vec4(r.origin, 1.0) );
-	rObj.direction = vec3( uTallBoxInvMatrix * vec4(r.direction, 0.0) );
-	d = BoxIntersect( boxes[0].minCorner, boxes[0].maxCorner, rObj, normal );
-	
-	if (d < t)
-	{	
-		t = d;
-		
-		// transfom normal back into world space
-		normal = vec3(uTallBoxNormalMatrix * normal);
-		
-		intersec.normal = normalize(normal);
-		intersec.emission = boxes[0].emission;
-		intersec.color = boxes[0].color;
-		intersec.type = boxes[0].type;
-	}
-	
-	
-	// SHORT DIFFUSE WHITE BOX
-	// transform ray into Short Box's object space
-	rObj.origin = vec3( uShortBoxInvMatrix * vec4(r.origin, 1.0) );
-	rObj.direction = vec3( uShortBoxInvMatrix * vec4(r.direction, 0.0) );
-	d = BoxIntersect( boxes[1].minCorner, boxes[1].maxCorner, rObj, normal );
-	
-	if (d < t)
-	{	
-		t = d;
-		
-		// transfom normal back into world space
-		normal = vec3(uShortBoxNormalMatrix * normal);
-		
-		intersec.normal = normalize(normal);
-		intersec.emission = boxes[1].emission;
-		intersec.color = boxes[1].color;
-		intersec.type = boxes[1].type;
-	}
-	
+//    return t; // HACK disable this
 	
 	///////////////////////////////////////////////////////////////////////////////////////////////////////
 	// OCEAN 
 	///////////////////////////////////////////////////////////////////////////////////////////////////////
-	
+
+	/*
 	if ( !checkOcean )
 	{
 		return t;
@@ -467,56 +394,41 @@ float SceneIntersect( Ray r, inout Intersection intersec, bool checkOcean ) // H
 		h = abs(pos.y - getOceanWaterHeight(pos));
 		if (d > 4000.0 || h < 1.0) break;
 		d += h;
-		pos += dir * h; 
+		pos += dir * h;
 	}
 	hitWorldSpace = pos;
-	
+
 	if (d > 4000.0)
 	{
 		d = PlaneIntersect( vec4(0, 1, 0, 0.0), r );
 		if ( d >= INFINITY ) return t;
 		hitWorldSpace = r.origin + r.direction * d;
-		
+
 		waterWaveHeight = getOceanWaterHeight_Detail(hitWorldSpace);
 		d = DisplacementBoxIntersect( vec3(-INFINITY, -INFINITY, -INFINITY), vec3(INFINITY, waterWaveHeight, INFINITY), r);
 		hitWorldSpace = r.origin + r.direction * d;
 	}
-	
-	if (d < t) 
+
+	if (d < t)
 	{
 		float eps = 1.0;
 		t = d;
 		float dx = getOceanWaterHeight_Detail(hitWorldSpace - vec3(eps,0,0)) - getOceanWaterHeight_Detail(hitWorldSpace + vec3(eps,0,0));
 		float dy = eps * 2.0; // (the water wave height is a function of x and z, not dependent on y)
 		float dz = getOceanWaterHeight_Detail(hitWorldSpace - vec3(0,0,eps)) - getOceanWaterHeight_Detail(hitWorldSpace + vec3(0,0,eps));
-		
+
 		intersec.normal = normalize(vec3(dx,dy,dz));
 		intersec.emission = vec3(0);
 		intersec.color = vec3(0.6, 1.0, 1.0);
 		intersec.type = REFR;
 	}
+	*/
 	
-	
-	return t; // HACK disable  this
+//	return t; // HACK disable  this
 	
 	///////////////////////////////////////////////////////////////////////////////////////////////////////
 	// glTF
 	///////////////////////////////////////////////////////////////////////////////////////////////////////
-	
-	for (int i = 0; i < N_SPHERES; i++)
-        {
-		d = SphereIntersect( spheres[i].radius, spheres[i].position, r );
-		if (d < t)
-		{
-			t = d;
-			intersec.normal = (r.origin + r.direction * t) - spheres[i].position;
-			intersec.emission = spheres[i].emission;
-			intersec.color = spheres[i].color;
-			intersec.type = spheres[i].type;
-			intersec.albedoTextureID = -1;
-			triangleLookupNeeded = false;
-		}
-	}
 
 	currentBoxNode = GetBoxNode(stackptr);
 	currentStackData = StackLevelData(stackptr, BoundingBoxIntersect(currentBoxNode.minCorner, currentBoxNode.maxCorner, r.origin, inverseDir));
@@ -869,24 +781,24 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed ) // HACK dis
 		if (intersec.type == WOOD)  // Diffuse object underneath with thin layer of Water on top
 		{
 			checkOcean = false;
-			
+
 			float roughness = 0.2;
-			
+
 			nc = 1.0; // IOR of air
-			nt = 1.1; // IOR of ClearCoat 
+			nt = 1.1; // IOR of ClearCoat
 			Re = calcFresnelReflectance(n, nl, r.direction, nc, nt, tdir);
-			
+
 			// choose either specular reflection or diffuse
 			if ( rand(seed) < Re )
-			{	
+			{
 				vec3 reflectVec = reflect(r.direction, nl);
 				r = Ray( x, mix( reflectVec, normalize(nl + randVec), roughness) );
 				r.origin += r.direction;
 				previousIntersecType = REFR;
 
 				bounceIsSpecular = (diffuseCount < 2);
-				
-				continue;	
+
+				continue;
 			}
 			else
 			{
@@ -895,15 +807,15 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed ) // HACK dis
 				float pattern = abs(noise(vec2( (x.x * 0.5 * x.z * 0.5 + sin(x.y*0.005)) )));
 				float woodPattern = 1.0 / max(1.0, pattern * 100.0);
 				intersec.color *= vec3(woodPattern);
-				
+
 				mask *= intersec.color;
-				
+
 				if (rand(seed) < 0.5)
 				{
 					// choose random Diffuse sample vector
 					r = Ray( x, randomCosWeightedDirectionInHemisphere(nl, seed) );
 					r.origin += r.direction;
-					
+
 					bounceIsSpecular = false;
 					continue;
 				}
@@ -913,12 +825,12 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed ) // HACK dis
 					r.origin += nl;
 					weight = max(0.0, dot(r.direction, nl));
 					mask *= clamp(weight, 0.0, 1.0);
-					
+
 					bounceIsSpecular = true;
 					continue;
 				}
 			}
-			
+
 		} //end if (intersec.type == WOOD)
 		
 		if (intersec.type == COAT)  // Diffuse object underneath with ClearCoat on top (like car, or shiny pool ball)
@@ -993,7 +905,7 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed ) // HACK dis
 
 	return vec3(max(vec3(0), accumCol));   // HACK disable this, enable accumCol below
 
-	return accumCol;
+	//return accumCol;
 }
 
 
@@ -1001,15 +913,8 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed ) // HACK dis
 void SetupScene(void)
 //-----------------------------------------------------------------------
 {
-	// HACK disable this, enable lines below
 	float x = INFINITY;
 	quads[0] = Quad( vec3( x/-2.0, 0, x/2.0), vec3(x/2.0, 0, x/2.0), vec3(x/2.0, 0, x/-2.0), vec3(x/-2.0, 0, x/-2.0),    vec3(0), vec3(0.45), DIFF);// Floor
-	
-	//vec3 z  = vec3(0);
-	//vec3 L3 = vec3(1, 0.984, 0.941);// yellowish light
-
-	//spheres[0] = Sphere( 10000.0,     vec3(0, 0, 0), L3,                 z, LIGHT);//spherical white Light1
-	//spheres[1] = Sphere(  4000.0, vec3(0, -4000, 0),  z, vec3(0.4,0.4,0.4), CHECK);//Checkered Floor
 }
 
 
