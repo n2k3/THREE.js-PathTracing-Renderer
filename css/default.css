@@ -20,13 +20,15 @@ html, body {
     display: inline-block;
     font-family: monospace;
     top: 0.5em;
+    pointer-events: none;
 }
 
-#cameraInfo {
+#samples {
     position: absolute;
     left: 1em;
     bottom: 1em;
     text-align: left;
+    pointer-events: none;
 }
 
 .black-transparent-bg {

@@ -9,13 +9,8 @@
 </head>
 <body>
 
-<div id="info" class="black-transparent-bg no-select"><span>three.js PathTracing Renderer - glTF Viewer</span></div>
-<div id="cameraInfo" class="black-transparent-bg no-select">
-    <span>FOV: 72<br>
-        Aperture: 0.00<br>
-        FocusDistance: 100<br>
-        Samples: 0</span>
-</div>
+<div id="info" class="black-transparent-bg"><span>three.js PathTracing Renderer - glTF Viewer</span></div>
+<div id="samples" class="black-transparent-bg"><span>Samples: 0</span></div>
 <div id="container"></div>
 
 <script src="js/three.min.js"></script>
@@ -27,48 +22,33 @@
 <script src="js/FirstPersonCameraControls.js"></script>
 <script src="js/MobileJoystickControls.js"></script>
 <script src="js/stats.min.js"></script>
+<script src="js/dat.gui.min.js"></script>
 
 <script>
-    var SCREEN_WIDTH;
-    var SCREEN_HEIGHT;
-    var canvas, context;
-    var container, stats;
-    var controls;
-    var pathTracingScene, screenTextureScene, screenOutputScene;
-    var pathTracingUniforms, screenTextureUniforms, screenOutputUniforms; // HACK disable screenTextureUniforms, screenOutputUniforms;
-	var PerlinNoiseTexture;
-    var pathTracingDefines;
-    var pathTracingGeometry, pathTracingMaterial, pathTracingMesh;
-    var screenTextureGeometry, screenTextureMaterial, screenTextureMesh;
-    var screenOutputGeometry, screenOutputMaterial, screenOutputMesh;
-	var tallBoxGeometry, tallBoxMaterial, tallBoxMesh;
-	var shortBoxGeometry, shortBoxMaterial, shortBoxMesh;
-	var pathTracingRenderTarget, screenOutputRenderTarget; // HACK disable screenOutputRenderTarget
-    var quadCamera, worldCamera;
-    var renderer, clock;
-    var frameTime, elapsedTime; // HACK disable elapsedTime
-    var fovScale;
-    var increaseFOV = false;
-    var decreaseFOV = false;
-    var apertureSize = 0.0;
-    var increaseAperture = false;
-    var decreaseAperture = false;
-    var focusDistance = 100.0;
-    var increaseFocusDist = false;
-    var decreaseFocusDist = false;
-    var pixelRatio = 1;
-    var windowIsBeingResized = false;
-	var TWO_PI = Math.PI * 2;
-	var sunAngle = 0;
-	var sunDirection = new THREE.Vector3();
+    // Three.js related variables
+    let container, canvas, stats, controls, renderer, clock;
+    // PathTracing scene variables
+    let pathTracingScene, screenTextureScene, screenOutputScene;
+    let pathTracingUniforms, pathTracingDefines, screenOutputMaterial, pathTracingRenderTarget;
+    // let elapsedTime;
+    // Camera variables
+    let quadCamera, worldCamera;
+    // Camera setting variables
+    var apertureSize = 0.0, focusDistance = 100.0, speed = 60;
+    // var cameraUnderWater = false;
+    // Rendering variables
+    var pixelRatio = 0.5; // 1 is full resolution, 0.5 is half, 0.25 is quarter, etc. (must be > than 0.0)
+	var sunAngle = Math.PI / 2.5;
     var randomVector = new THREE.Vector3();
     var sampleCounter = 1.0;
     var frameCounter = 1.0;
-    var keyboard = new THREEx.KeyboardState();
+    var forceUpdate = false;
     var cameraIsMoving = false;
     var cameraJustStartedMoving = false;
     var cameraRecentlyMoving = false;
+    // Input variables
     var isPaused = true;
+    var keyboard = new THREEx.KeyboardState();
     var oldYawRotation, oldPitchRotation;
     var mobileJoystickControls = null;
     var oldDeltaX = 0, oldDeltaY = 0;
@@ -80,15 +60,15 @@
     var oldPinchWidthY = 0;
     var pinchDeltaX = 0;
     var pinchDeltaY = 0;
-    var camFlightSpeed = 60;
-	var cameraUnderWater = false;
     var fontAspect;
+    //
     var modelMesh;
     var modelScale = 1.0;
     var modelPositionOffset = new THREE.Vector3();
     var total_number_of_triangles = 0;
     var triangle_array;
     var materialNumber = 0;
+    var totalTriangleCount = 0;
     var triangleMaterialMarkers = [];
     var pathTracingMaterialList = [];
     var uniqueMaterialTextures = [];
@@ -97,15 +77,18 @@
     var aabb_array;
     var aabbDataTexture;
     var totalWork;
-    var vp0 = new THREE.Vector3();
-    var vp1 = new THREE.Vector3();
-    var vp2 = new THREE.Vector3();
-    var vn0 = new THREE.Vector3();
-    var vn1 = new THREE.Vector3();
-    var vn2 = new THREE.Vector3();
-    var vt0 = new THREE.Vector2();
-    var vt1 = new THREE.Vector2();
-    var vt2 = new THREE.Vector2();
+    var gui;
+    var cameraSettingsFolder;
+    var fovChanged;
+    const minFov = 1;
+    const maxFov = 150;
+    var focusDistanceChanged;
+    const minFocusDistance = 1;
+    var apertureSizeChanged;
+    const minApertureSize = 0;
+    const maxApertureSize = 20;
+
+    var gltfLoader = new THREE.GLTFLoader();
 
     // the following variables will be used to calculate rotations and directions from the camera
     var cameraDirectionVector = new THREE.Vector3(); //for moving where the camera is looking
@@ -118,8 +101,6 @@
 
     var PI_2 = Math.PI / 2; //used by controls below
 
-    var cameraInfoElement = document.querySelector("#cameraInfo span");
-
     var mouseControl = true;
 
     function onMouseWheel(event) {
@@ -127,147 +108,182 @@
         event.preventDefault();
         event.stopPropagation();
 
-        if (event.deltaY > 0) {
-
-            increaseFOV = true;
-
-        } else if (event.deltaY < 0) {
-
-            decreaseFOV = true;
-
-        }
+        if (event.deltaY > 0)
+            increaseFov();
+        else if (event.deltaY < 0)
+            decreaseFov();
 
     }
 
-    class MaterialObject {
-        constructor(material) {
-            // a list of material types and their corresponding numbers are found in the 'pathTracingCommon.js' file
-            this.type = material.opacity < 1 ? 2 : 1; // default is 1 = diffuse opaque, 2 = glossy transparent, 4 = glossy opaque;
-            this.albedoTextureID = -1; // which diffuse map to use for model's color, '-1' = no textures are used
-            this.color = material.color ? material.color.copy(material.color) : new THREE.Color(1.0, 1.0, 1.0); // takes on different meanings, depending on 'type' above
-            this.roughness = material.roughness || 0.0; // 0.0 to 1.0 range, perfectly smooth to extremely rough
-            this.metalness = material.metalness || 0.0; // 0.0 to 1.0 range, usually either 0 or 1, either non-metal or metal
-            this.opacity = material.opacity || 1.0; // 0.0 to 1.0 range, fully transparent to fully opaque
-            this.refractiveIndex = this.type === 4 ? 1.0 : 1.5; // 1.0=air, 1.33=water, 1.4=clearCoat, 1.5=glass, etc.
-            pathTracingMaterialList.push(this);
+    function increaseFov() {
+        if (worldCamera.fov < maxFov) {
+            worldCamera.fov++;
+            fovChanged = true;
         }
+    }
+
+    function decreaseFov() {
+        if (worldCamera.fov > minFov) {
+            worldCamera.fov--;
+            fovChanged = true;
+        }
+    }
+
+    function increaseApertureSize() {
+        if (apertureSize < maxApertureSize) {
+            apertureSize += 0.1;
+            apertureSizeChanged = true;
+        }
+    }
+
+    function decreaseApertureSize() {
+        if (apertureSize > minApertureSize) {
+            apertureSize -= 0.1;
+            apertureSizeChanged = true;
+        }
+    }
+
+    function MaterialObject(material) {
+        // a list of material types and their corresponding numbers are found in the 'pathTracingCommon.js' file
+        this.type = material.opacity < 1 ? 2 : 1; // default is 1 = diffuse opaque, 2 = glossy transparent, 4 = glossy opaque;
+        this.albedoTextureID = -1; // which diffuse map to use for model's color, '-1' = no textures are used
+        this.color = material.color ? material.color.copy(material.color) : new THREE.Color(1.0, 1.0, 1.0); // takes on different meanings, depending on 'type' above
+        this.roughness = material.roughness || 0.0; // 0.0 to 1.0 range, perfectly smooth to extremely rough
+        this.metalness = material.metalness || 0.0; // 0.0 to 1.0 range, usually either 0 or 1, either non-metal or metal
+        this.opacity = material.opacity || 1.0; // 0.0 to 1.0 range, fully transparent to fully opaque
+        this.refractiveIndex = this.type === 4 ? 1.0 : 1.5; // 1.0=air, 1.33=water, 1.4=clearCoat, 1.5=glass, etc.
+        pathTracingMaterialList.push(this);
     }
 
     console.time("LoadingGltf");
 
-    var gltfLoader = new THREE.GLTFLoader();
+    loadModels(["models/scene.gltf"]);
 
-    gltfLoader.load("models/scene.gltf", function( meshGroup ) {
-        if (meshGroup.scene)
-            meshGroup = meshGroup.scene;
+    function loadModels(modelPaths) {
+        pathTracingMaterialList = [];
+        triangleMaterialMarkers = [];
+        totalTriangleCount = 0;
+        meshList = [];
+        uniqueMaterialTextures = [];
 
-        let matrixStack = [];
-        let parent;
-        let totalTriangleCount = 0;
-        matrixStack.push(new THREE.Matrix4());
-        meshGroup.traverse( function ( child ) {
-            if ( child.isMesh ) {
-                if ( parent !== undefined && parent.name !== child.parent.name ) {
-                    matrixStack.pop();
-                    parent = undefined;
-                }
-
-                child.geometry.applyMatrix( child.matrix.multiply( matrixStack[matrixStack.length - 1] ) );
-
-                if (child.material.length > 0) {
-                    for (let i = 0; i < child.material.length; i++)
-                        new MaterialObject(child.material[i]);
-                } else {
-                    new MaterialObject(child.material);
-                }
-
-                if (child.geometry.groups.length > 0) {
-                    for (let i = 0; i < child.geometry.groups.length; i++) {
-                        totalTriangleCount += child.geometry.groups[i].count / 3;
-                        triangleMaterialMarkers.push(totalTriangleCount);
-                    }
-                } else {
-                    totalTriangleCount += child.geometry.index.count / 3;
-                    triangleMaterialMarkers.push(totalTriangleCount);
-                }
-
-                meshList.push(child);
-            }
-            else if ( child.isObject3D ) {
-                if ( parent !== undefined )
-                    matrixStack.pop();
-
-                let matrixPeek = new THREE.Matrix4().copy( matrixStack[matrixStack.length - 1] ).multiply( child.matrix );
-                matrixStack.push( matrixPeek );
-                parent = child;
-            }
-        } );
-
-        var geoList = [];
-        for (let i = 0; i < meshList.length; i++)
-            geoList.push(meshList[i].geometry);
-
-        modelMesh = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geoList));
-        if (modelMesh.geometry.index)
-            modelMesh.geometry = modelMesh.geometry.toNonIndexed(); // why do we need NonIndexed geometry?
-
-        for (let i = 0; i < meshList.length; i++) {
-            if (meshList[i].material.length > 0) {
-                for (let j = 0; j < meshList[i].material.length; j++) {
-                    if (meshList[i].material[j].map)
-                        uniqueMaterialTextures.push(meshList[i].material[j].map);
-                }
-            }
-            else if (meshList[i].material.map) {
-                uniqueMaterialTextures.push(meshList[i].material.map);
-            }
+        for (let i = 0; i < modelPaths.length; i++) {
+            gltfLoader.load(modelPaths[i], loadModel);
         }
+    }
 
-        // Remove duplicate entries
-        uniqueMaterialTextures = Array.from(new Set(uniqueMaterialTextures));
+    function loadModel(meshGroup) { {
+            if (meshGroup.scene)
+                meshGroup = meshGroup.scene;
 
-        for (let i = 0; i < meshList.length; i++) {
-            if (meshList[i].material.length > 0) {
-                for (let j = 0; j < meshList[i].material.length; j++) {
-                    if (meshList[i].material[j].map) {
-                        for (let k = 0; k < uniqueMaterialTextures.length; k++) {
-                            if (meshList[i].material[j].map.image.src === uniqueMaterialTextures[k].image.src) {
-                                pathTracingMaterialList[i].albedoTextureID = k;
+            let matrixStack = [];
+            let parent;
+            matrixStack.push(new THREE.Matrix4());
+            meshGroup.traverse( function ( child ) {
+                if ( child.isMesh ) {
+                    if ( parent !== undefined && parent.name !== child.parent.name ) {
+                        matrixStack.pop();
+                        parent = undefined;
+                    }
+
+                    child.geometry.applyMatrix( child.matrix.multiply( matrixStack[matrixStack.length - 1] ) );
+
+                    if (child.material.length > 0) {
+                        for (let i = 0; i < child.material.length; i++)
+                            new MaterialObject(child.material[i]);
+                    } else {
+                        new MaterialObject(child.material);
+                    }
+
+                    if (child.geometry.groups.length > 0) {
+                        for (let i = 0; i < child.geometry.groups.length; i++) {
+                            triangleMaterialMarkers.push(totalTriangleCount += child.geometry.groups[i].count / 3);
+                        }
+                    } else {
+                        triangleMaterialMarkers.push(totalTriangleCount += child.geometry.index.count / 3);
+                    }
+
+                    meshList.push(child);
+                }
+                else if ( child.isObject3D ) {
+                    if ( parent !== undefined )
+                        matrixStack.pop();
+
+                    let matrixPeek = new THREE.Matrix4().copy( matrixStack[matrixStack.length - 1] ).multiply( child.matrix );
+                    matrixStack.push( matrixPeek );
+                    parent = child;
+                }
+            } );
+
+            var geoList = [];
+            for (let i = 0; i < meshList.length; i++)
+                geoList.push(meshList[i].geometry);
+
+            modelMesh = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geoList));
+            if (modelMesh.geometry.index)
+                modelMesh.geometry = modelMesh.geometry.toNonIndexed(); // why do we need NonIndexed geometry?
+
+            for (let i = 0; i < meshList.length; i++) {
+                if (meshList[i].material.length > 0) {
+                    for (let j = 0; j < meshList[i].material.length; j++) {
+                        if (meshList[i].material[j].map)
+                            uniqueMaterialTextures.push(meshList[i].material[j].map);
+                    }
+                }
+                else if (meshList[i].material.map) {
+                    uniqueMaterialTextures.push(meshList[i].material.map);
+                }
+            }
+
+            // Remove duplicate entries
+            uniqueMaterialTextures = Array.from(new Set(uniqueMaterialTextures));
+
+            for (let i = 0; i < meshList.length; i++) {
+                if (meshList[i].material.length > 0) {
+                    for (let j = 0; j < meshList[i].material.length; j++) {
+                        if (meshList[i].material[j].map) {
+                            for (let k = 0; k < uniqueMaterialTextures.length; k++) {
+                                if (meshList[i].material[j].map.image.src === uniqueMaterialTextures[k].image.src) {
+                                    pathTracingMaterialList[i].albedoTextureID = k;
+                                }
                             }
                         }
                     }
                 }
-            }
-            else if (meshList[i].material.map) {
-                for (let j = 0; j < uniqueMaterialTextures.length; j++) {
-                    if (meshList[i].material.map.image.src === uniqueMaterialTextures[j].image.src) {
-                        pathTracingMaterialList[i].albedoTextureID = j;
+                else if (meshList[i].material.map) {
+                    for (let j = 0; j < uniqueMaterialTextures.length; j++) {
+                        if (meshList[i].material.map.image.src === uniqueMaterialTextures[j].image.src) {
+                            pathTracingMaterialList[i].albedoTextureID = j;
+                        }
                     }
                 }
             }
+
+            // settings for scene model
+            modelScale = 10.0;
+            //modelMesh.geometry.rotateY(-Math.PI * 0.95);
+            //modelPositionOffset.set(0, 4, -100);
+
+            console.timeEnd("LoadingGltf");
+            // now that the models have been loaded, we can init everything else
+            init();
+
         }
-
-        // settings for scene model
-        modelScale = 10.0;
-        //modelMesh.geometry.rotateY(-Math.PI * 0.95);
-        //modelPositionOffset.set(0, 4, -100);
-
-        console.timeEnd("LoadingGltf");
-        // now that the models have been loaded, we can init everything else
-        init();
-
-    });
-
-
-
+    }
 
     function init() {
 
         //#region "Init Three.js"
         console.time("InitThree");
+
+        container = document.getElementById('container');
+        canvas = document.createElement( 'canvas' );
+        let context = canvas.getContext( 'webgl2' );
+
+        // if on mobile device, set mouseControl to false, pixelRatio to 0.5, and unpause the app because there is no ESC key and no mouse capture to do
         if ('ontouchstart' in window) {
             mouseControl = false;
             pixelRatio = 0.5;
+            isPaused = false;
 
             mobileJoystickControls = new MobileJoystickControls({
                 //showJoystick: true,
@@ -275,31 +291,20 @@
             });
         }
 
-        // if on mobile device, unpause the app because there is no ESC key and no mouse capture to do
-        if (!mouseControl)
-            isPaused = false;
-
         if (mouseControl) {
 
             window.addEventListener('wheel', onMouseWheel, false);
 
-            document.body.addEventListener("click", function () {
+            canvas.addEventListener("click", function () {
                 this.requestPointerLock = this.requestPointerLock || this.mozRequestPointerLock;
                 this.requestPointerLock();
             }, false);
 
-            window.addEventListener("click", function (event) {
-                event.preventDefault();
-            }, false);
-            window.addEventListener("dblclick", function (event) {
-                event.preventDefault();
-            }, false);
-
-
             var pointerlockChange = function (event) {
 
-                if (document.pointerLockElement === document.body ||
-                    document.mozPointerLockElement === document.body || document.webkitPointerLockElement === document.body) {
+                if (document.pointerLockElement === canvas ||
+                    document.mozPointerLockElement === canvas ||
+                    document.webkitPointerLockElement === canvas) {
 
                     isPaused = false;
 
@@ -316,20 +321,22 @@
             document.addEventListener('mozpointerlockchange', pointerlockChange, false);
             document.addEventListener('webkitpointerlockchange', pointerlockChange, false);
 
-        }
+            window.addEventListener("click", function (event) {
+                event.preventDefault();
+            }, false);
+            window.addEventListener("dblclick", function (event) {
+                event.preventDefault();
+            }, false);
 
-        canvas = document.createElement( 'canvas' );
-        context = canvas.getContext( 'webgl2' );
+        }
 
         renderer = new THREE.WebGLRenderer( { canvas: canvas, context: context } );
         renderer.autoClear = false;
-        // 1 is full resolution, 0.5 is half, 0.25 is quarter, etc. (must be > than 0.0)
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize( window.innerWidth, window.innerHeight );
         //required by WebGL 2.0 for rendering to FLOAT textures
         renderer.context.getExtension('EXT_color_buffer_float');
 
-        container = document.getElementById('container');
         container.appendChild(renderer.domElement);
 
         stats = new Stats();
@@ -361,8 +368,9 @@
         worldCamera = new THREE.PerspectiveCamera(72, 1, 1, 1000); // TODO try 72, window.innerWidth / window.innerHeight, 1, 1000);
         pathTracingScene.add(worldCamera);
 
-        controls = new FirstPersonCameraControls(worldCamera);
+        initGui(worldCamera);
 
+        controls = new FirstPersonCameraControls(worldCamera);
         cameraControlsObject = controls.getObject();
         cameraControlsYawObject = controls.getYawObject();
         cameraControlsPitchObject = controls.getPitchObject();
@@ -434,6 +442,9 @@
             triangle_b_box_min.set(Infinity, Infinity, Infinity);
             triangle_b_box_max.set(-Infinity, -Infinity, -Infinity);
 
+            let vt0 = new THREE.Vector3();
+            let vt1 = new THREE.Vector3();
+            let vt2 = new THREE.Vector3();
             // record vertex texture coordinates (UVs)
             if (modelHasUVs) {
                 vt0.set(vta[6 * i + 0], vta[6 * i + 1]);
@@ -446,14 +457,14 @@
             }
 
             // record vertex normals
-            vn0.set(vna[9 * i + 0], vna[9 * i + 1], vna[9 * i + 2]).normalize();
-            vn1.set(vna[9 * i + 3], vna[9 * i + 4], vna[9 * i + 5]).normalize();
-            vn2.set(vna[9 * i + 6], vna[9 * i + 7], vna[9 * i + 8]).normalize();
+            let vn0 = new THREE.Vector3(vna[9 * i + 0], vna[9 * i + 1], vna[9 * i + 2]).normalize();
+            let vn1 = new THREE.Vector3(vna[9 * i + 3], vna[9 * i + 4], vna[9 * i + 5]).normalize();
+            let vn2 = new THREE.Vector3(vna[9 * i + 6], vna[9 * i + 7], vna[9 * i + 8]).normalize();
 
             // record vertex positions
-            vp0.set(vpa[9 * i + 0], vpa[9 * i + 1], vpa[9 * i + 2]);
-            vp1.set(vpa[9 * i + 3], vpa[9 * i + 4], vpa[9 * i + 5]);
-            vp2.set(vpa[9 * i + 6], vpa[9 * i + 7], vpa[9 * i + 8]);
+            let vp0 = new THREE.Vector3(vpa[9 * i + 0], vpa[9 * i + 1], vpa[9 * i + 2]);
+            let vp1 = new THREE.Vector3(vpa[9 * i + 3], vpa[9 * i + 4], vpa[9 * i + 5]);
+            let vp2 = new THREE.Vector3(vpa[9 * i + 6], vpa[9 * i + 7], vpa[9 * i + 8]);
 
             vp0.multiplyScalar(modelScale);
             vp1.multiplyScalar(modelScale);
@@ -603,15 +614,13 @@
         console.timeEnd("BvhGeneration");
         console.time("SceneSetup");
 		
-		PerlinNoiseTexture = new THREE.TextureLoader().load( 'textures/perlin256.png' );
+		let PerlinNoiseTexture = new THREE.TextureLoader().load( 'textures/perlin256.png' );
 		PerlinNoiseTexture.wrapS = THREE.RepeatWrapping;
 		PerlinNoiseTexture.wrapT = THREE.RepeatWrapping;
 		PerlinNoiseTexture.flipY = false;
 		PerlinNoiseTexture.minFilter = THREE.LinearFilter;
 		PerlinNoiseTexture.magFilter = THREE.LinearFilter;
 		PerlinNoiseTexture.generateMipmaps = false;
-		
-        pathTracingGeometry = new THREE.PlaneBufferGeometry(2, 2);
 
         pathTracingUniforms = {
 
@@ -638,24 +647,15 @@
 			uSunDirection: { type: "v3", value: new THREE.Vector3() },
             uCameraMatrix: {type: "m4", value: new THREE.Matrix4() },
 
-			uShortBoxInvMatrix: { type: "m4", value: new THREE.Matrix4() },
-			uShortBoxNormalMatrix: { type: "m3", value: new THREE.Matrix3() },
-
-			uTallBoxInvMatrix: { type: "m4", value: new THREE.Matrix4() },
-			uTallBoxNormalMatrix: { type: "m3", value: new THREE.Matrix3() }
-
         };
 
         pathTracingDefines = {
             //N_ALBEDO_MAPS: uniqueMaterialTextures.length
         };
 
-        pathTracingMesh = new THREE.Mesh(pathTracingGeometry, pathTracingMaterial);
-        pathTracingScene.add(pathTracingMesh);
+        let screenTextureGeometry = new THREE.PlaneBufferGeometry(2, 2);
 
-        screenTextureGeometry = new THREE.PlaneBufferGeometry(2, 2);
-
-        screenTextureMaterial = new THREE.ShaderMaterial({
+        let screenTextureMaterial = new THREE.ShaderMaterial({
             uniforms: screenTextureShader.uniforms,
             vertexShader: screenTextureShader.vertexShader,
             fragmentShader: screenTextureShader.fragmentShader,
@@ -665,12 +665,12 @@
 
         screenTextureMaterial.uniforms.tTexture0.value = pathTracingRenderTarget.texture;
 
-        screenTextureMesh = new THREE.Mesh(screenTextureGeometry, screenTextureMaterial);
+        let screenTextureMesh = new THREE.Mesh(screenTextureGeometry, screenTextureMaterial);
         screenTextureScene.add(screenTextureMesh);
 
 
 
-        screenOutputGeometry = new THREE.PlaneBufferGeometry(2, 2);
+        let screenOutputGeometry = new THREE.PlaneBufferGeometry(2, 2);
 
         screenOutputMaterial = new THREE.ShaderMaterial({
             uniforms: screenOutputShader.uniforms,
@@ -682,44 +682,8 @@
 
         screenOutputMaterial.uniforms.tTexture0.value = pathTracingRenderTarget.texture;
 
-        screenOutputMesh = new THREE.Mesh(screenOutputGeometry, screenOutputMaterial);
+        let screenOutputMesh = new THREE.Mesh(screenOutputGeometry, screenOutputMaterial);
         screenOutputScene.add(screenOutputMesh);
-
-		// Boxes
-		tallBoxGeometry = new THREE.BoxGeometry(1,1,1);
-		tallBoxMaterial = new THREE.MeshPhysicalMaterial( {
-			color: new THREE.Color(0.95, 0.95, 0.95), //RGB, ranging from 0.0 - 1.0
-			roughness: 1.0 // ideal Diffuse material	
-		} );
-		
-		tallBoxMesh = new THREE.Mesh(tallBoxGeometry, tallBoxMaterial);
-		pathTracingScene.add(tallBoxMesh);
-		tallBoxMesh.visible = false; // disable normal Three.js rendering updates of this object: 
-		// it is just a data placeholder as well as an Object3D that can be transformed/manipulated by 
-		// using familiar Three.js library commands. It is then fed into the GPU path tracing renderer
-		// through its 'matrixWorld' matrix. See below:
-		tallBoxMesh.rotation.set(0, Math.PI * 0.1, 0);
-		tallBoxMesh.position.set(180, 170, -350);
-		tallBoxMesh.updateMatrixWorld(true); // 'true' forces immediate matrix update
-		
-		pathTracingUniforms.uTallBoxInvMatrix.value.getInverse( tallBoxMesh.matrixWorld );
-		pathTracingUniforms.uTallBoxNormalMatrix.value.getNormalMatrix( tallBoxMesh.matrixWorld );
-		
-		shortBoxGeometry = new THREE.BoxGeometry(1,1,1);
-		shortBoxMaterial = new THREE.MeshPhysicalMaterial( {
-			color: new THREE.Color(0.95, 0.95, 0.95), //RGB, ranging from 0.0 - 1.0
-			roughness: 1.0 // ideal Diffuse material	
-		} );
-		
-		shortBoxMesh = new THREE.Mesh(shortBoxGeometry, shortBoxMaterial);
-		pathTracingScene.add(shortBoxMesh);
-		shortBoxMesh.visible = false;
-		shortBoxMesh.rotation.set(0, -Math.PI * 0.09, 0);
-		shortBoxMesh.position.set(370, 85, -170);
-		shortBoxMesh.updateMatrixWorld(true); // 'true' forces immediate matrix update
-		
-		pathTracingUniforms.uShortBoxInvMatrix.value.getInverse( shortBoxMesh.matrixWorld );
-		pathTracingUniforms.uShortBoxNormalMatrix.value.getNormalMatrix( shortBoxMesh.matrixWorld );
 
         /*
         // Fullscreen API
@@ -747,7 +711,7 @@
         //load vertex and fragment shader files that is used in the  pathTracing material, mesh and scene
         loader.load('shaders/vertex.glsl', (vertexShader) => {
             loader.load('shaders/fragment_combined_test.glsl', (fragmentShader) => {
-                pathTracingMaterial = new THREE.ShaderMaterial({
+                let pathTracingMaterial = new THREE.ShaderMaterial({
                     uniforms: pathTracingUniforms,
                     defines: pathTracingDefines,
                     vertexShader: vertexShader,
@@ -756,7 +720,8 @@
                     depthWrite: false
                 });
 
-                pathTracingMesh = new THREE.Mesh(pathTracingGeometry, pathTracingMaterial);
+                let pathTracingGeometry = new THREE.PlaneBufferGeometry(2, 2);
+                let pathTracingMesh = new THREE.Mesh(pathTracingGeometry, pathTracingMaterial);
                 pathTracingScene.add(pathTracingMesh);
 
                 // the following keeps the large scene ShaderMaterial quad right in front
@@ -776,12 +741,35 @@
 
     } // end function init()
 
+    function initGui(worldCamera) {
+        if (gui)
+            return;
 
+        gui = new dat.GUI();
+        gui.add(this, 'pixelRatio', 0.1, 1).step(0.05).onFinishChange(function (value) {
+            // Fires when a controller loses focus.
+            console.log("The new value is " + value);
+        });
+        gui.add(this, 'sunAngle', 0, Math.PI).step(0.02).onChange((value) => {
+            forceUpdate = true;
+        });
+        cameraSettingsFolder = gui.addFolder("Camera Settings");
+        cameraSettingsFolder.add(worldCamera, 'fov', minFov, maxFov).onChange((value) => {
+            fovChanged = true;
+        });
+        cameraSettingsFolder.add(this, 'apertureSize', minApertureSize, maxApertureSize).step(0.1).onChange((value) => {
+            apertureSizeChanged = true;
+        });
+        cameraSettingsFolder.add(this, 'focusDistance', minFocusDistance).step(1).onChange((value) => {
+            focusDistanceChanged = true;
+        });
+        cameraSettingsFolder.add(this, 'speed').step(1);
+    }
 
     function onWindowResize(event) {
 
-        SCREEN_WIDTH = window.innerWidth;
-        SCREEN_HEIGHT = window.innerHeight;
+        let SCREEN_WIDTH = window.innerWidth;
+        let SCREEN_HEIGHT = window.innerHeight;
 
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -803,11 +791,11 @@
         // the following scales all scene objects by the worldCamera's field of view,
         // taking into account the screen aspect ratio and multiplying the uniform uULen,
         // the x-coordinate, by this ratio
-        fovScale = worldCamera.fov * 0.5 * (Math.PI / 180.0);
+        var fovScale = worldCamera.fov * 0.5 * (Math.PI / 180.0);
         pathTracingUniforms.uVLen.value = Math.tan(fovScale);
         pathTracingUniforms.uULen.value = pathTracingUniforms.uVLen.value * worldCamera.aspect;
 
-        windowIsBeingResized = true;
+        forceUpdate = true;
 
         if (!mouseControl) {
 
@@ -856,21 +844,19 @@
 
     } // end function onWindowResize( event )
 
-
-
     function animate() {
 
         requestAnimationFrame(animate);
 
-        frameTime = clock.getDelta();
+        let frameTime = clock.getDelta();
 
         //elapsedTime = clock.getElapsedTime() % 1000;
 
         // reset flags
         cameraIsMoving = false;
-        if (windowIsBeingResized) {
+        if (forceUpdate) {
             cameraIsMoving = true;
-            windowIsBeingResized = false;
+            forceUpdate = false;
         }
 
         cameraJustStartedMoving = false;
@@ -944,13 +930,13 @@
             pinchDeltaY = newPinchWidthY - oldPinchWidthY;
 
             if (Math.abs(pinchDeltaX) > Math.abs(pinchDeltaY)) {
-                if (pinchDeltaX < -3) increaseFOV = true;
-                if (pinchDeltaX > 3) decreaseFOV = true;
+                if (pinchDeltaX < -3) increaseFov();
+                if (pinchDeltaX > 3) decreaseFov();
             }
 
             if (Math.abs(pinchDeltaY) >= Math.abs(pinchDeltaX)) {
-                if (pinchDeltaY > 1) increaseAperture = true;
-                if (pinchDeltaY < -1) decreaseAperture = true;
+                if (pinchDeltaY > 1) increaseApertureSize();
+                if (pinchDeltaY < -1) decreaseApertureSize();
             }
 
             // save state for next frame
@@ -969,6 +955,12 @@
         // the following gives us a rotation quaternion (4D vector), which will be useful for
         // rotating scene objects to match the camera's rotation
         worldCamera.getWorldQuaternion(cameraWorldQuaternion);
+
+        var camFlightSpeed;
+        if(keyboard.modifiers && keyboard.modifiers.shift)
+            camFlightSpeed = speed * 2;
+        else
+            camFlightSpeed = speed;
 
         // allow flying camera
         if ((keyboard.pressed('W') || button3Pressed) && !(keyboard.pressed('S') || button4Pressed)) {
@@ -1002,77 +994,46 @@
             cameraIsMoving = true;
         }
         if ((keyboard.pressed('up') || button5Pressed) && !(keyboard.pressed('down') || button6Pressed)) {
-
-            increaseFocusDist = true;
+            focusDistance++;
+            focusDistanceChanged = true;
         }
         if ((keyboard.pressed('down') || button6Pressed) && !(keyboard.pressed('up') || button5Pressed)) {
-
-            decreaseFocusDist = true;
+            if (focusDistance > minFocusDistance) {
+                focusDistance--;
+                focusDistanceChanged = true;
+            }
         }
         if (keyboard.pressed('right') && !keyboard.pressed('left')) {
-
-            increaseAperture = true;
+            increaseApertureSize();
         }
         if (keyboard.pressed('left') && !keyboard.pressed('right')) {
-
-            decreaseAperture = true;
+            decreaseApertureSize()
         }
 
-        if (increaseFOV) {
-            worldCamera.fov++;
-            if (worldCamera.fov > 150)
-                worldCamera.fov = 150;
-            fovScale = worldCamera.fov * 0.5 * (Math.PI / 180.0);
+        if (fovChanged || apertureSizeChanged || focusDistanceChanged) {
+            cameraIsMoving = true;
+
+            // Iterate over all GUI controllers
+            for (var i in cameraSettingsFolder.__controllers)
+                cameraSettingsFolder.__controllers[i].updateDisplay();
+        }
+
+        if (fovChanged) {
+            var fovScale = worldCamera.fov * 0.5 * (Math.PI / 180.0);
             pathTracingUniforms.uVLen.value = Math.tan(fovScale);
             pathTracingUniforms.uULen.value = pathTracingUniforms.uVLen.value * worldCamera.aspect;
-
-            cameraIsMoving = true;
-            increaseFOV = false;
-        }
-        if (decreaseFOV) {
-            worldCamera.fov--;
-            if (worldCamera.fov < 1)
-                worldCamera.fov = 1;
-            fovScale = worldCamera.fov * 0.5 * (Math.PI / 180.0);
-            pathTracingUniforms.uVLen.value = Math.tan(fovScale);
-            pathTracingUniforms.uULen.value = pathTracingUniforms.uVLen.value * worldCamera.aspect;
-
-            cameraIsMoving = true;
-            decreaseFOV = false;
+            fovChanged = false;
         }
 
-        if (increaseFocusDist) {
-            focusDistance += 1;
-            pathTracingUniforms.uFocusDistance.value = focusDistance;
-            cameraIsMoving = true;
-            increaseFocusDist = false;
-        }
-        if (decreaseFocusDist) {
-            focusDistance -= 1;
-            if (focusDistance < 1)
-                focusDistance = 1;
-            pathTracingUniforms.uFocusDistance.value = focusDistance;
-            cameraIsMoving = true;
-            decreaseFocusDist = false;
-        }
-
-        if (increaseAperture) {
-            apertureSize += 0.1;
-            if (apertureSize > 20.0)
-                apertureSize = 20.0;
+        if (apertureSizeChanged) {
             pathTracingUniforms.uApertureSize.value = apertureSize;
-            cameraIsMoving = true;
-            increaseAperture = false;
-        }
-        if (decreaseAperture) {
-            apertureSize -= 0.1;
-            if (apertureSize < 0.0)
-                apertureSize = 0.0;
-            pathTracingUniforms.uApertureSize.value = apertureSize;
-            cameraIsMoving = true;
-            decreaseAperture = false;
+            apertureSizeChanged = false;
         }
 
+        if (focusDistanceChanged) {
+            pathTracingUniforms.uFocusDistance.value = focusDistance;
+            focusDistanceChanged = false;
+        }
 
         if ( cameraIsMoving ) {
 
@@ -1105,8 +1066,8 @@
 		*/
 
 		//sunAngle = (elapsedTime * 0.03) % Math.PI;
-		sunAngle = Math.PI / 2.5;
-		sunDirection.set(Math.cos(sunAngle) * 1.2, Math.sin(sunAngle), -Math.cos(sunAngle) * 3.0);
+		// sunAngle = Math.PI / 2.5;
+		let sunDirection = new THREE.Vector3(Math.cos(sunAngle) * 1.2, Math.sin(sunAngle), -Math.cos(sunAngle) * 3.0);
 		sunDirection.normalize();
 
 		//pathTracingUniforms.uCameraUnderWater.value = cameraUnderWater;
@@ -1122,7 +1083,7 @@
         pathTracingUniforms.uCameraMatrix.value.copy(worldCamera.matrixWorld);
         screenOutputMaterial.uniforms.uOneOverSampleCounter.value = 1.0 / sampleCounter;
 
-        cameraInfoElement.innerHTML = `FOV: ${worldCamera.fov}<br>Aperture: ${apertureSize.toFixed(2)}<br>FocusDistance: ${focusDistance}<br>Samples: ${sampleCounter}`;
+        document.querySelector("#samples span").innerHTML = `Samples: ${sampleCounter}`;
 
         // RENDERING in 3 steps
 
