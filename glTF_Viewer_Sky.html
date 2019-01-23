@@ -746,9 +746,16 @@
             return;
 
         gui = new dat.GUI();
-        gui.add(this, 'pixelRatio', 0.1, 1).step(0.05).onFinishChange(function (value) {
-            // Fires when a controller loses focus.
-            console.log("The new value is " + value);
+        gui.add(this, 'pixelRatio', 0.25, 1).step(0.05).onChange(function (value) {
+            renderer.setPixelRatio(value);
+
+            pathTracingUniforms.uResolution.value.x = renderer.context.drawingBufferWidth;
+            pathTracingUniforms.uResolution.value.y = renderer.context.drawingBufferHeight;
+
+            pathTracingRenderTarget.setSize(renderer.context.drawingBufferWidth, renderer.context.drawingBufferHeight);
+            screenTextureRenderTarget.setSize(renderer.context.drawingBufferWidth, renderer.context.drawingBufferHeight);
+
+            forceUpdate = true;
         });
         gui.add(this, 'sunAngle', 0, Math.PI).step(0.02).onChange((value) => {
             forceUpdate = true;
