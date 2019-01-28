@@ -26,11 +26,9 @@ var mobileControlsMoveX = 0, mobileControlsMoveY = 0, oldPinchWidthX = 0, oldPin
 var stillFlagX = true, stillFlagY = true;
 var fontAspect;
 // Geometry variables
-let totalTriangleCount = 0;
 let triangleMaterialMarkers = [];
 let pathTracingMaterialList = [];
 let uniqueMaterialTextures = [];
-let meshList = [];
 var aabb_array;
 // Menu variables
 var gui;
@@ -129,7 +127,7 @@ function decreaseApertureSize() {
     }
 }
 
-function MaterialObject(material) {
+function MaterialObject(material, pathTracingMaterialList) {
     // a list of material types and their corresponding numbers are found in the 'pathTracingCommon.js' file
     this.type = material.opacity < 1 ? 2 : 1; // default is 1 = diffuse opaque, 2 = glossy transparent, 4 = glossy opaque;
     this.albedoTextureID = -1; // which diffuse map to use for model's color, '-1' = no textures are used
@@ -142,11 +140,9 @@ function MaterialObject(material) {
     pathTracingMaterialList.push(this);
 }
 
-function loadModels(modelPaths) {
+async function loadModels(modelPaths) {
     pathTracingMaterialList = [];
     triangleMaterialMarkers = [];
-    totalTriangleCount = 0;
-    meshList = [];
     uniqueMaterialTextures = [];
     let promises = [];
 
@@ -154,9 +150,8 @@ function loadModels(modelPaths) {
         let modelPath = modelPaths[i];
         console.log(`Loading model ${modelPath}`);
 
-        let promiseLoader =
-            gltfPromiseLoader(modelPath)
-                .then(loadedObject => loadModel(loadedObject))
+        let promiseLoader = await gltfPromiseLoader(modelPath)
+                .then(loadedObject => traverseModel(loadedObject, pathTracingMaterialList, triangleMaterialMarkers))
                 .catch(err => console.error(err));
 
         promises.push(promiseLoader);
@@ -165,10 +160,11 @@ function loadModels(modelPaths) {
     return Promise.all(promises);
 }
 
-function loadModel(meshGroup) {
+function traverseModel(meshGroup, pathTracingMaterialList, triangleMaterialMarkers) {
     if (meshGroup.scene)
         meshGroup = meshGroup.scene;
 
+    let meshes = [];
     let matrixStack = [];
     let parent;
     matrixStack.push(new THREE.Matrix4());
@@ -183,20 +179,20 @@ function loadModel(meshGroup) {
 
             if (child.material.length > 0) {
                 for (let i = 0; i < child.material.length; i++)
-                    new MaterialObject(child.material[i]);
+                    new MaterialObject(child.material[i], pathTracingMaterialList);
             } else {
-                new MaterialObject(child.material);
+                new MaterialObject(child.material, pathTracingMaterialList);
             }
 
             if (child.geometry.groups.length > 0) {
                 for (let i = 0; i < child.geometry.groups.length; i++) {
-                    triangleMaterialMarkers.push(totalTriangleCount += child.geometry.groups[i].count / 3);
+                    triangleMaterialMarkers.push((triangleMaterialMarkers.length > 0 ? triangleMaterialMarkers[triangleMaterialMarkers.length - 1] : 0) + child.geometry.groups[i].count / 3);
                 }
             } else {
-                triangleMaterialMarkers.push(totalTriangleCount += child.geometry.index.count / 3);
+                triangleMaterialMarkers.push((triangleMaterialMarkers.length > 0 ? triangleMaterialMarkers[triangleMaterialMarkers.length - 1] : 0) + child.geometry.index.count / 3);
             }
 
-            meshList.push(child);
+            meshes.push(child);
         } else if (child.isObject3D) {
             if (parent !== undefined)
                 matrixStack.pop();
@@ -206,6 +202,8 @@ function loadModel(meshGroup) {
             parent = child;
         }
     });
+
+    return meshes;
 }
 
 function initThree() {
@@ -338,11 +336,17 @@ async function initModels(modelPaths) {
     loadingSpinner.classList.remove("hidden");
 
     // Wait until all models are loaded
-    await loadModels(modelPaths);
+    var meshList = await loadModels(modelPaths);
+    var flattenedMeshList = [].concat.apply([], meshList);
 
     // Start listening to window resize events
     window.addEventListener('resize', onWindowResize, false);
 
+    // Prepare geometry for path tracing
+    prepareGeometryForPT(flattenedMeshList, pathTracingMaterialList, triangleMaterialMarkers);
+}
+
+async function prepareGeometryForPT(meshList, pathTracingMaterialList, triangleMaterialMarkers) {
     // Gather all geometry from the mesh list that now contains loaded models
     let geoList = [];
     for (let i = 0; i < meshList.length; i++)
