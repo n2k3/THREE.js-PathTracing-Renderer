@@ -3,32 +3,27 @@ let container, canvas, stats, controls, renderer, clock;
 // PathTracing scene variables
 let pathTracingScene, screenTextureScene, screenOutputScene;
 let pathTracingUniforms, pathTracingDefines, screenOutputMaterial, pathTracingRenderTarget;
-// let elapsedTime;
 // Camera variables
 let quadCamera, worldCamera;
+var cameraControlsObject; //for positioning and moving the camera itself
+var cameraControlsYawObject; //allows access to control camera's left/right movements through mobile input
+var cameraControlsPitchObject; //allows access to control camera's up/down movements through mobile input
 // Camera setting variables
 var apertureSize = 0.0, focusDistance = 100.0, speed = 60;
-// var cameraUnderWater = false;
 // Rendering variables
 var pixelRatio = 0.5; // 1 is full resolution, 0.5 is half, 0.25 is quarter, etc. (must be > than 0.0)
 var sunAngle = Math.PI / 2.5;
-var sampleCounter = 1.0;
-var frameCounter = 1.0;
-var forceUpdate = false;
-var cameraIsMoving = false, cameraJustStartedMoving = false, cameraRecentlyMoving = false;
+var sampleCounter = 1.0, frameCounter = 1.0;
+var forceUpdate = false, cameraIsMoving = false, cameraJustStartedMoving = false, cameraRecentlyMoving = false;
 // Input variables
 var isPaused = true;
+var oldYawRotation = 0, oldPitchRotation = 0, oldDeltaX = 0, oldDeltaY = 0, newDeltaX = 0, newDeltaY = 0;
+var mouseControl = true;
 var keyboard = new THREEx.KeyboardState();
-var oldYawRotation, oldPitchRotation;
 var mobileJoystickControls = null;
-var oldDeltaX = 0, oldDeltaY = 0;
-var newDeltaX = 0, newDeltaY = 0;
 // Mobile Input variables
-var mobileControlsMoveX = 0;
-var mobileControlsMoveY = 0;
+var mobileControlsMoveX = 0, mobileControlsMoveY = 0, oldPinchWidthX = 0, oldPinchWidthY = 0, pinchDeltaX = 0, pinchDeltaY = 0;
 var stillFlagX = true, stillFlagY = true;
-var oldPinchWidthX = 0, oldPinchWidthY = 0;
-var pinchDeltaX = 0, pinchDeltaY = 0;
 var fontAspect;
 // Geometry variables
 let totalTriangleCount = 0;
@@ -40,17 +35,34 @@ var aabb_array;
 // Menu variables
 var gui;
 var cameraSettingsFolder;
-var fovChanged;
-const minFov = 1;
-const maxFov = 150;
-var focusDistanceChanged;
+const minFov = 1, maxFov = 150;
 const minFocusDistance = 1;
-var apertureSizeChanged;
-const minApertureSize = 0;
-const maxApertureSize = 20;
-
+const minApertureSize = 0, maxApertureSize = 20;
+var fovChanged = false, focusDistanceChanged = false, apertureSizeChanged = false;
+// Constants
+const PI_2 = Math.PI / 2; // used in animation method
 const samplesSpanEl = document.querySelector("#samples span");
 const loadingSpinner = document.querySelector("#loadingSpinner");
+
+/////////////////
+// Model setup //
+/////////////////
+let modelPaths = [
+    "models/00_001_002.gltf",
+    "models/00_002_000.gltf",
+    "models/00_003_002.gltf",
+    "models/00_standard.gltf", // this model and above are for first floor
+    // "models/01_001_001.gltf",
+    // "models/01_002_001.gltf",
+    // "models/01_standard.gltf", // this model and above are for 2nd floor
+    // "models/02_001_000.gltf",
+    // "models/02_002_001.gltf",
+    // "models/02_standard.gltf", // this model and above are for 3rd floor
+    // "models/03_001_001.gltf", // roof
+]
+let modelScale = 10.0;
+let modelRotationY = 0; // in radians
+let modelPositionOffset = new THREE.Vector3(0, 0, 0);
 
 var gltfLoader = new THREE.GLTFLoader();
 var fileLoader = new THREE.FileLoader();
@@ -67,38 +79,6 @@ function filePromiseLoader(url, onProgress) {
         fileLoader.load(url, resolve, onProgress, reject);
     });
 }
-
-// the following variables will be used to calculate rotations and directions from the camera
-var cameraDirectionVector = new THREE.Vector3(); //for moving where the camera is looking
-var cameraRightVector = new THREE.Vector3(); //for strafing the camera right and left
-var cameraUpVector = new THREE.Vector3(); //for moving camera up and down
-var cameraWorldQuaternion = new THREE.Quaternion(); //for rotating scene objects to match camera's current rotation
-var cameraControlsObject; //for positioning and moving the camera itself
-var cameraControlsYawObject; //allows access to control camera's left/right movements through mobile input
-var cameraControlsPitchObject; //allows access to control camera's up/down movements through mobile input
-
-var PI_2 = Math.PI / 2; //used by controls below
-
-var mouseControl = true;
-
-let modelPaths = [
-    "models/00_001_002.gltf",
-    "models/00_002_000.gltf",
-    "models/00_003_002.gltf",
-    "models/00_standard.gltf", // this model and above are for first floor
-    // "models/01_001_001.gltf",
-    // "models/01_002_001.gltf",
-    // "models/01_standard.gltf", // this model and above are for 2nd floor
-    // "models/02_001_000.gltf",
-    // "models/02_002_001.gltf",
-    // "models/02_standard.gltf", // this model and above are for 3rd floor
-    // "models/03_001_001.gltf", // roof
-]
-
-// settings for models
-let scale = 10.0;
-let modelRotationY = 0; // in radians
-let modelPositionOffset = new THREE.Vector3(0, 0, 0);
 
 // init Three.js
 initThree();
@@ -472,9 +452,9 @@ async function initModels(modelPaths) {
         let vp1 = new THREE.Vector3(vpa[9 * i + 3], vpa[9 * i + 4], vpa[9 * i + 5]);
         let vp2 = new THREE.Vector3(vpa[9 * i + 6], vpa[9 * i + 7], vpa[9 * i + 8]);
 
-        vp0.multiplyScalar(scale);
-        vp1.multiplyScalar(scale);
-        vp2.multiplyScalar(scale);
+        vp0.multiplyScalar(modelScale);
+        vp1.multiplyScalar(modelScale);
+        vp2.multiplyScalar(modelScale);
 
         vp0.add(modelPositionOffset);
         vp1.add(modelPositionOffset);
@@ -954,15 +934,18 @@ function animate() {
 
     } // end if ( !mouseControl )
 
+    // the following variables will be used to calculate rotations and directions from the camera
     // this gives us a vector in the direction that the camera is pointing,
     // which will be useful for moving the camera 'forward' and shooting projectiles in that direction
-    controls.getDirection(cameraDirectionVector);
+    let cameraDirectionVector = new THREE.Vector3(), cameraRightVector = new THREE.Vector3(), cameraUpVector = new THREE.Vector3();
+    controls.getDirection(cameraDirectionVector); //for moving where the camera is looking
     cameraDirectionVector.normalize();
-    controls.getUpVector(cameraUpVector);
-    controls.getRightVector(cameraRightVector);
+    controls.getRightVector(cameraRightVector); //for strafing the camera right and left
+    controls.getUpVector(cameraUpVector); //for moving camera up and down
 
     // the following gives us a rotation quaternion (4D vector), which will be useful for
     // rotating scene objects to match the camera's rotation
+    let cameraWorldQuaternion = new THREE.Quaternion(); //for rotating scene objects to match camera's current rotation
     worldCamera.getWorldQuaternion(cameraWorldQuaternion);
 
     var camFlightSpeed;
