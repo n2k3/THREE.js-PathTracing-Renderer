@@ -15,9 +15,7 @@ var sunAngle = Math.PI / 2.5;
 var sampleCounter = 1.0;
 var frameCounter = 1.0;
 var forceUpdate = false;
-var cameraIsMoving = false;
-var cameraJustStartedMoving = false;
-var cameraRecentlyMoving = false;
+var cameraIsMoving = false, cameraJustStartedMoving = false, cameraRecentlyMoving = false;
 // Input variables
 var isPaused = true;
 var keyboard = new THREEx.KeyboardState();
@@ -25,29 +23,21 @@ var oldYawRotation, oldPitchRotation;
 var mobileJoystickControls = null;
 var oldDeltaX = 0, oldDeltaY = 0;
 var newDeltaX = 0, newDeltaY = 0;
+// Mobile Input variables
 var mobileControlsMoveX = 0;
 var mobileControlsMoveY = 0;
 var stillFlagX = true, stillFlagY = true;
 var oldPinchWidthX = 0, oldPinchWidthY = 0;
 var pinchDeltaX = 0, pinchDeltaY = 0;
 var fontAspect;
-//
-var modelMesh;
-var scale = 1;
-var modelRotationY = 0;
-var modelPositionOffset = new THREE.Vector3();
-var total_number_of_triangles = 0;
-var triangle_array;
-var materialNumber = 0;
-var totalTriangleCount = 0;
-var triangleMaterialMarkers = [];
-var pathTracingMaterialList = [];
-var uniqueMaterialTextures = [];
-var meshList = [];
-var triangleDataTexture;
+// Geometry variables
+let totalTriangleCount = 0;
+let triangleMaterialMarkers = [];
+let pathTracingMaterialList = [];
+let uniqueMaterialTextures = [];
+let meshList = [];
 var aabb_array;
-var aabbDataTexture;
-var totalWork;
+// Menu variables
 var gui;
 var cameraSettingsFolder;
 var fovChanged;
@@ -106,9 +96,9 @@ let modelPaths = [
 ]
 
 // settings for models
-scale = 10.0;
-modelRotationY = 0; // in radians
-modelPositionOffset.set(0, 0, 0);
+let scale = 10.0;
+let modelRotationY = 0; // in radians
+let modelPositionOffset = new THREE.Vector3(0, 0, 0);
 
 // init Three.js
 initThree();
@@ -379,12 +369,12 @@ async function initModels(modelPaths) {
         geoList.push(meshList[i].geometry);
 
     // Merge geometry from all models into one new mesh
-    modelMesh = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geoList));
+    let modelMesh = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geoList));
     if (modelMesh.geometry.index)
         modelMesh.geometry = modelMesh.geometry.toNonIndexed(); // why do we need NonIndexed geometry?
 
     // divide by 9 because of nonIndexed geometry (each triangle has 3 floats with each float constisting of 3 components)
-    total_number_of_triangles = modelMesh.geometry.attributes.position.array.length / 9;
+    let total_number_of_triangles = modelMesh.geometry.attributes.position.array.length / 9;
 
     // Gather all textures from materials
     for (let i = 0; i < meshList.length; i++) {
@@ -431,10 +421,10 @@ async function initModels(modelPaths) {
 
     modelMesh.geometry.rotateY(modelRotationY);
 
-    totalWork = new Uint32Array(total_number_of_triangles);
+    let totalWork = new Uint32Array(total_number_of_triangles);
 
     // Initialize triangle and aabb arrays where 2048 = width and height of texture and 4 are the r, g, b and a components
-    triangle_array = new Float32Array(2048 * 2048 * 4);
+    let triangle_array = new Float32Array(2048 * 2048 * 4);
     aabb_array = new Float32Array(2048 * 2048 * 4);
 
     var triangle_b_box_min = new THREE.Vector3();
@@ -452,6 +442,7 @@ async function initModels(modelPaths) {
         modelHasUVs = true;
     }
 
+    let materialNumber = 0;
     for (let i = 0; i < total_number_of_triangles; i++) {
 
         triangle_b_box_min.set(Infinity, Infinity, Infinity);
@@ -590,7 +581,7 @@ async function initModels(modelPaths) {
 
     }
 
-    triangleDataTexture = new THREE.DataTexture(triangle_array,
+    let triangleDataTexture = new THREE.DataTexture(triangle_array,
         2048,
         2048,
         THREE.RGBAFormat,
@@ -608,7 +599,7 @@ async function initModels(modelPaths) {
     triangleDataTexture.generateMipmaps = false;
     triangleDataTexture.needsUpdate = true;
 
-    aabbDataTexture = new THREE.DataTexture(aabb_array,
+    let aabbDataTexture = new THREE.DataTexture(aabb_array,
         2048,
         2048,
         THREE.RGBAFormat,
