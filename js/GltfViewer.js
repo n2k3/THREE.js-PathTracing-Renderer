@@ -94,18 +94,6 @@ let modelPaths = [
     // "models/03_006_000.gltf",
     // "models/03_007_002.gltf",
     // "models/03_009_003.gltf"
-    // old model
-    // "old/models/00_001_002.gltf",
-    // "old/models/00_002_000.gltf",
-    // "old/models/00_003_002.gltf",
-    // "old/models/00_standard.gltf", // this model and above are for first floor
-    // "old/models/01_001_001.gltf",
-    // "old/models/01_002_001.gltf",
-    // "old/models/01_standard.gltf", // this model and above are for 2nd floor
-    // "old/models/02_001_000.gltf",
-    // "old/models/02_002_001.gltf",
-    // "old/models/02_standard.gltf", // this model and above are for 3rd floor
-    // "old/models/03_001_001.gltf", // roof
 ]
 let modelScale = 10.0;
 let modelRotationY = Math.PI; // in radians
@@ -334,7 +322,7 @@ function initThree() {
     // worldCamera is the dynamic camera 3d object that will be positioned, oriented and
     // constantly updated inside the 3d scene.  Its view will ultimately get passed back to the
     // stationary quadCamera, which renders the scene to a fullscreen quad (made up of 2 large triangles).
-    worldCamera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+    worldCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
     pathTracingScene.add(worldCamera);
 
     controls = new FirstPersonCameraControls(worldCamera);
