@@ -51,7 +51,7 @@ float QuadIntersect( vec3 v0, vec3 v1, vec3 v2, vec3 v3, Ray r )
 /* Credit: some of the following cloud code is borrowed from https://www.shadertoy.com/view/XtBXDw posted by user 'valentingalea' */
 
 #define THICKNESS      25.0
-#define ABSORPTION     0.45
+#define ABSORPTION     0.333
 #define N_MARCH_STEPS  12
 #define N_LIGHT_STEPS  3
 
@@ -61,8 +61,8 @@ float noise3D( in vec3 p )
 }
 
 const mat3 m = 1.21 * mat3( 0.00,  0.80,  0.60,
-                    -0.80,  0.36, -0.48,
-		    -0.60, -0.48,  0.64 );
+                           -0.80,  0.36, -0.48,
+                           -0.60, -0.48,  0.64 );
 
 float fbm( vec3 p )
 {
@@ -86,8 +86,8 @@ float cloud_density( vec3 pos, float cov )
 float cloud_light( vec3 pos, vec3 dir_step, float cov )
 {
 	float T = 1.0; // transmitance
-    	float dens;
-    	float T_i;
+    float dens;
+    float T_i;
 	
 	for (int i = 0; i < N_LIGHT_STEPS; i++) 
 	{
@@ -110,7 +110,7 @@ vec4 render_clouds( Ray eye, vec3 p, vec3 sunDirection )
 	float covAmount = (sin(mod(uTime * 0.1, TWO_PI))) * 0.5 + 0.5;
 	float coverage = mix(1.0, 1.5, clamp(covAmount, 0.0, 1.0));
 	float T = 1.0; // transmitance
-	vec3 C = vec3(0); // color
+	vec3 C = vec3(0.25); // color
 	float alpha = 0.0;
 	float dens;
 	float T_i;
@@ -157,8 +157,8 @@ float checkCloudCover( vec3 sunDirection, vec3 p )
 
 struct StackLevelData
 {
-        float id;
-        float rayT;
+    float id;
+    float rayT;
 } stackLevels[24];
 
 struct BoxNode
@@ -182,10 +182,10 @@ BoxNode GetBoxNode(const in float i)
 	vec4 aabbNodeData0 = texture( tAABBTexture, uv0 );
 	vec4 aabbNodeData1 = texture( tAABBTexture, uv1 );
 
-	BoxNode BN = BoxNode( aabbNodeData0.x,
-			      aabbNodeData0.yzw,
-			      aabbNodeData1.x,
-			      aabbNodeData1.yzw );
+    BoxNode BN = BoxNode( aabbNodeData0.x,
+                          aabbNodeData0.yzw,
+                          aabbNodeData1.x,
+                          aabbNodeData1.yzw );
 
     return BN;
 }
@@ -399,6 +399,7 @@ vec3 calcDirectLightingSun( vec3 mask, vec3 x, vec3 nl, vec3 sunDirection, Ray r
 */
 
 
+
 //-----------------------------------------------------------------------
 vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 //-----------------------------------------------------------------------
@@ -407,7 +408,7 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 	Ray cameraRay = r;
 	vec3 initialSkyColor = Get_Sky_Color(r, sunDirection);
 	
-	Ray skyRay = Ray( r.origin * vec3(0.02), normalize(vec3(r.direction.x, abs(r.direction.y), r.direction.z)) );
+	Ray skyRay = Ray( r.origin * 0.02, normalize(vec3(r.direction.x, abs(r.direction.y), r.direction.z)) );
 	float dc = SphereIntersect( 20000.0, vec3(skyRay.origin.x, -19900.0, skyRay.origin.z) + vec3(rand(seed) * 2.0), skyRay );
 	vec3 skyPos = skyRay.origin + skyRay.direction * dc;
 	vec4 cld = render_clouds(skyRay, skyPos, sunDirection);
@@ -426,6 +427,7 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 	vec3 firstX = vec3(0);
     vec3 tdir;
 
+	float hitDistance;
 	float nc, nt, Re;
 	float weight;
 	float t = INFINITY;
@@ -436,7 +438,6 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
     float epsIntersect = 0.01;
 
 	bool bounceIsSpecular = true;
-
 
     for (int bounces = 0; bounces < 6; bounces++)
 	{
@@ -453,39 +454,22 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 			break;	
 		}
 
-        // TODO figure out how to properly let direct sun light through glass, and render sun + clouds through glass
+        // TODO figure out how to properly render clouds in reflection and transmitting through glass then hitting the sky and sun bloom
 		// if ray bounced off of refractive material and hits sky
 		if ( t == INFINITY && previousIntersecType == REFR )
 		{
 			if (bounceIsSpecular) // prevents sun 'fireflies' on diffuse surfaces
-				accumCol = mask * Get_Sky_Color(r, sunDirection)/* * 1.0 / SUN_INTENSITY*/;
+				//accumCol = mask * Get_Sky_Color(r, sunDirection) * 0.0225; // TODO how to determine weight to calculate consversation of light energy based on original intesnity? 0.0225 is 2x the arbitrary number from the DIFF check)
+				accumCol = mask * Get_Sky_Color(r, sunDirection) / 2.0; // used with skyHit = true, if false enable the line above.
 
+            skyHit = true; // TODO enables clouds through glass
+                           // but makes diffuse surfaces hit by indirect sunlight 'feel transparent'
+                           // and renders clouds on diffuse surfaces for rays that went through glass
+                           // and makes the diffuse surface light up more when looking angle increases...
 			firstX = skyPos;
 			
 			break;
 		}
-
-		/*
-		// if ray bounced off of mirror box and hits sky
-		if (t == INFINITY && previousIntersecType == SPEC)
-		{
-			if (bounceIsSpecular) // prevents sun 'fireflies' on diffuse surfaces
-				accumCol = mask * Get_Sky_Color(r, sunDirection);
-
-			if (bounces == 1) // reflection of sky in tall mirror box
-			{
-				initialSkyColor = Get_Sky_Color(Ray(r.origin, vec3(r.direction.x, abs(r.direction.y), r.direction.z)), sunDirection);
-				skyRay = Ray(r.origin * 0.01, normalize(vec3(r.direction.x, abs(r.direction.y), r.direction.z)) );
-				dc = PlaneIntersect( vec4(0, -1, 0, -150.0 + (rand(seed) * 2.0)), skyRay );
-				skyPos = skyRay.origin + skyRay.direction * dc;
-
-				skyHit = true;
-				firstX = skyPos;
-			}
-
-			break;
-		}
-		*/
 
 		// if ray bounced off of diffuse material and hits sky
 		if (t == INFINITY && previousIntersecType == DIFF)
@@ -493,13 +477,14 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 			weight = 2.0;
 			// prevents sun 'fireflies' on diffuse surfaces
 			if (bounceIsSpecular || dot(r.direction, sunDirection) > 0.98)
-				weight = 0.015; // TODO tweak weight
-			 
+				weight = 0.01125; // TODO how to determine weight to calculate natural brightness based on SUN_INTENSITY? 0.01125 seems arbitrary...
+
 			accumCol = mask * Get_Sky_Color(r, sunDirection) * weight;
-					
+
 			break;
 		}
 
+        /* TODO enable when supporting multiple lights in the scene other than the sun
 		// if we reached light material, don't spawn any more rays
 		if (intersec.type == LIGHT)
 		{
@@ -507,6 +492,7 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 
 			break;
 		}
+		*/
 
 		// useful data
 		vec3 n = intersec.normal;
@@ -527,15 +513,12 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 		
         if (intersec.type == DIFF) // Ideal DIFFUSE reflection
         {
-			diffuseCount++; // HACK remove this
-
-			previousIntersecType = DIFF; // HACK remove this
+			diffuseCount++;
+			previousIntersecType = DIFF;
 
 			mask *= intersec.color;
             //accumCol += calcDirectLightingSun(mask, x, nl, sunDirection, r, randVec) * 0.02 * cloudShadowFactor;
-//			bounceIsSpecular = false; // HACK enable this, disable below
 
-			/* HACK enable this
 			// Russian Roulette
 			float p = max(mask.r, max(mask.g, mask.b));
 			if (bounces > 0)
@@ -545,10 +528,9 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
                 else
                     break;
 			}
-			*/
 
             // TODO figure out how to properly combine indirect sky light and sun light
-            if (diffuseCount == 1 && rand(seed) < 0.5) // HACK disable this
+            if (diffuseCount == 1 && rand(seed) < 0.5)
             {
 				// choose random Diffuse sample vector
 				r = Ray( x, randomCosWeightedDirectionInHemisphere(nl, seed) );
@@ -569,21 +551,6 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
             }
         }
 
-        /*
-        if (intersec.type == SPEC)  // Ideal SPECULAR reflection
-        {
-			//checkOcean = true;
-			mask *= intersec.color; // HACK disable this, disable below
-			r = Ray( x, reflect(r.direction, nl) );
-			r.origin += r.direction * epsIntersect;
-			mask *= intersec.color;
-			//bounceIsSpecular = true; // HACK enable this
-			previousIntersecType = SPEC;
-
-			continue;
-        }
-        */
-
         if (intersec.type == REFR)  // Ideal dielectric REFRACTION
 		{
 			previousIntersecType = REFR;
@@ -592,21 +559,21 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 			nt = 1.5; // IOR of common Glass
 			Re = calcFresnelReflectance(n, nl, r.direction, nc, nt, tdir);
 
-            /*
 			if (diffuseCount < 2)
-				bounceIsSpecular = true; // HACK enable this
-            */
+				bounceIsSpecular = true;
 
+            // TODO enable clouds in reflection
 			if (rand(seed) < Re) // reflect ray from surface
 			{
 				r = Ray( x, reflect(r.direction, nl) );
 				r.origin += r.direction * epsIntersect;
-			    	continue;
+                continue;
 			}
 			else // transmit ray through surface
 			{
+                // TODO enable clouds when transmitting through surface
 				mask *= intersec.color * (1.0 - intersec.opacity);
-				r = Ray(x, tdir);
+				r = Ray(x, r.direction); // TODO using r.direction instead of tdir, because going through common Glass makes everything spherical from up close...
 				r.origin += r.direction * epsIntersect;
 				continue;
 			}
@@ -615,29 +582,25 @@ vec3 CalculateRadiance( Ray r, vec3 sunDirection, inout uvec2 seed )
 
 	} // end for (int bounces = 0; bounces < 5; bounces++)
 
-	// atmospheric haze effect (aerial perspective)
-	float hitDistance;
-	
 	if ( skyHit ) // sky and clouds
 	{
 		vec3 cloudColor = cld.rgb / (cld.a + 0.00001);
-		vec3 sunColor = clamp(Get_Sky_Color( Ray(skyPos, normalize((randVec * 0.03) + sunDirection)), sunDirection ), 0.0, 1.0);
+	    vec3 sunColor = clamp(Get_Sky_Color( Ray(skyPos, normalize((randVec * 0.03) + sunDirection)), sunDirection ), 0.0, 1.0);
 		
 		cloudColor *= mix(sunColor, vec3(1), max(0.0, dot(vec3(0,1,0), sunDirection)) );
 		cloudColor = mix(initialSkyColor, cloudColor, clamp(cld.a, 0.0, 1.0));
-		
+
 		hitDistance = distance(skyRay.origin, skyPos);
-		accumCol = mask * mix( accumCol, cloudColor, clamp( exp2( -hitDistance * 0.004 ), 0.0, 1.0 ) );
+		accumCol = mask * mix( accumCol, cloudColor, clamp( exp2( -hitDistance * 0.003 ), 0.0, 1.0 ) );
 	}	
 	else // terrain and other objects
 	{
+	    // atmospheric haze effect (aerial perspective)
 		hitDistance = distance(cameraRay.origin, firstX);
-		accumCol = mix( initialSkyColor, accumCol, clamp( exp2( -log(hitDistance * 0.0003) ), 0.0, 1.0 ) );
+		accumCol = mix( initialSkyColor, accumCol, clamp( exp2( -log(hitDistance * 0.001) ), 0.0, 1.0 ) ); // TODO add logarithmic haze value (0.001) to menu
 	}
 
-	return vec3(max(vec3(0), accumCol));   // HACK disable this, enable accumCol below
-
-	//return accumCol;
+	return vec3(max(vec3(0), accumCol));
 }
 
 
