@@ -658,7 +658,6 @@ async function prepareGeometryForPT(meshList, pathTracingMaterialList, triangleM
         uCameraJustStartedMoving: {type: "b1", value: false},
 
         uTime: {type: "f", value: 0.0},
-        uSampleCounter: {type: "f", value: 1.0}, // HACK try value 0.0, TODO remove this, not used
         uFrameCounter: {type: "f", value: 1.0},
         uULen: {type: "f", value: 1.0},
         uVLen: {type: "f", value: 1.0},
@@ -667,7 +666,6 @@ async function prepareGeometryForPT(meshList, pathTracingMaterialList, triangleM
 
         uResolution: {type: "v2", value: new THREE.Vector2()},
 
-        uRandomVector: {type: "v3", value: new THREE.Vector3()}, // TODO remove this, not used
         uSunDirection: {type: "v3", value: new THREE.Vector3()},
         uCameraMatrix: {type: "m4", value: new THREE.Matrix4()},
 
@@ -1101,9 +1099,7 @@ function animate() {
     //pathTracingUniforms.uTime.value = elapsedTime;
     pathTracingUniforms.uCameraIsMoving.value = cameraIsMoving;
     pathTracingUniforms.uCameraJustStartedMoving.value = cameraJustStartedMoving;
-    pathTracingUniforms.uSampleCounter.value = sampleCounter;
     pathTracingUniforms.uFrameCounter.value = frameCounter;
-    // pathTracingUniforms.uRandomVector.value = new THREE.Vector3(Math.random(), Math.random(), Math.random());
     // CAMERA
     cameraControlsObject.updateMatrixWorld(true);
     pathTracingUniforms.uCameraMatrix.value.copy(worldCamera.matrixWorld);
