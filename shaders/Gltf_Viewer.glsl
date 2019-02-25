@@ -242,7 +242,7 @@ vec3 Get_HDR_Color(Ray r)
 	sampleUV.y = asin(clamp(r.direction.y, -1.0, 1.0)) * ONE_OVER_PI + 0.5;
 	vec4 texData = texture( tHDRTexture, sampleUV );
 	texData = RGBEToLinear(texData);
-
+	
 	// tone mapping options
 	//vec3 texColor = LinearToneMapping(texData.rgb);
 	//vec3 texColor = ReinhardToneMapping(texData.rgb);
@@ -477,7 +477,7 @@ void main( void )
     
 	Ray ray = Ray( cameraPosition + randomAperturePos, finalRayDir );
 
-    // Add ground plane
+	// Add ground plane
 	plane = Plane( vec4(0, 1, 0, 0.0), vec3(0), vec3(0.45), DIFF);
 
 	// perform path tracing and get resulting pixel color
