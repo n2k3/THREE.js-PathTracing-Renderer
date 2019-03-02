@@ -242,11 +242,7 @@ vec3 Get_HDR_Color(Ray r)
 	vec4 texData = texture( tHDRTexture, sampleUV );
 	texData = RGBEToLinear(texData);
 	
-	// tone mapping options
-	//vec3 texColor = LinearToneMapping(texData.rgb);
-	//vec3 texColor = ReinhardToneMapping(texData.rgb);
-	//vec3 texColor = Uncharted2ToneMapping(texData.rgb);
-	//vec3 texColor = OptimizedCineonToneMapping(texData.rgb);
+	// tone mapping
 	vec3 texColor = ACESFilmicToneMapping(texData.rgb);
 
 	return texColor;
